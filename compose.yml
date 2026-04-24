@@ -1,0 +1,52 @@
+# MediaSync — Dockge
+# Les claus i IPs van al fitxer .env
+
+services:
+  mediasync:
+    image: php:8.2-apache
+    container_name: mediasync
+    restart: unless-stopped
+    ports:
+      - "8096:80"
+    env_file:
+      - .env
+    volumes:
+      - /root/.ssh/id_rsa:/ssh/id_rsa:ro
+      - mediasync_logs:/var/www/html/logs
+      - mediasync_data:/var/www/html/data
+    entrypoint:
+      - bash
+      - -c
+      - |
+        set -e
+        echo "==> Instal·lant dependències..."
+        apt-get update -qq && apt-get install -y -qq rsync openssh-client curl 2>/dev/null
+
+        echo "==> Descarregant fitxers de l'app..."
+        curl -fsSL "https://raw.githubusercontent.com/YOUR_USER/mediasync/main/api.php" -o /var/www/html/api.php
+        curl -fsSL "https://raw.githubusercontent.com/YOUR_USER/mediasync/main/index.html" -o /var/www/html/index.html
+        echo "    api.php: $(wc -c < /var/www/html/api.php) bytes"
+        echo "    index.html: $(wc -c < /var/www/html/index.html) bytes"
+
+        echo "==> Configurant SSH..."
+        mkdir -p /var/www/.ssh && chmod 700 /var/www/.ssh
+        if [ -f /ssh/id_rsa ]; then
+          cp /ssh/id_rsa /var/www/.ssh/id_rsa
+          chmod 600 /var/www/.ssh/id_rsa
+        fi
+        [ -n "$SOURCE_HOST" ] && ssh-keyscan -H "$SOURCE_HOST" >> /var/www/.ssh/known_hosts 2>/dev/null || true
+        [ -n "$DEST_HOST" ]   && ssh-keyscan -H "$DEST_HOST"   >> /var/www/.ssh/known_hosts 2>/dev/null || true
+        chown -R www-data:www-data /var/www/.ssh 2>/dev/null || true
+
+        echo "==> Configurant PHP i permisos..."
+        printf 'disable_functions =\nmax_execution_time = 0\nmemory_limit = 256M\n' > /usr/local/etc/php/conf.d/mediasync.ini
+        mkdir -p /var/www/html/logs /var/www/html/data
+        chown -R www-data:www-data /var/www/html
+        a2enmod rewrite 2>/dev/null
+
+        echo "==> MediaSync llest!"
+        exec apache2-foreground
+
+volumes:
+  mediasync_logs:
+  mediasync_data:

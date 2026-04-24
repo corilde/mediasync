@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediaSync — Radarr & Sonarr</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:         #0d0f14;
+    --bg2:        #151820;
+    --bg3:        #1c2030;
+    --border:     rgba(255,255,255,0.07);
+    --border2:    rgba(255,255,255,0.13);
+    --text:       #e8eaf0;
+    --muted:      #636880;
+    --accent:     #6c63ff;
+    --accent2:    #a78bfa;
+    --green:      #22d3a0;
+    --amber:      #f59e0b;
+    --red:        #f87171;
+    --card-r:     12px;
+    --font-mono:  'Space Mono', monospace;
+    --font-main:  'DM Sans', sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-main);
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 60px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo {
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .logo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .status-bar { display: flex; gap: 1rem; align-items: center; }
+  .status-badge {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border2);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .status-badge .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .dot.green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.red   { background: var(--red); }
+  .dot.amber { background: var(--amber); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{ opacity:1 } 50%{ opacity:0.4 } }
+
+  /* ── Layout ── */
+  .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+  .top-controls {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+  }
+  .tabs {
+    display: flex;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px;
+    gap: 2px;
+  }
+  .tab {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    padding: 6px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    transition: all 0.15s;
+    letter-spacing: 0.05em;
+  }
+  .tab.active { background: var(--bg3); color: var(--text); border: 1px solid var(--border2); }
+  .tab:hover:not(.active) { color: var(--text); }
+
+  .search-input {
+    flex: 1;
+    max-width: 320px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 8px 14px;
+    font-family: var(--font-main);
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .search-input:focus { border-color: var(--accent); }
+  .search-input::placeholder { color: var(--muted); }
+
+  .filter-select {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 8px 14px;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    outline: none;
+    cursor: pointer;
+  }
+  .filter-select option { background: var(--bg2); }
+
+  .btn {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+    padding: 8px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid var(--border2);
+    background: transparent;
+    color: var(--text);
+    transition: all 0.15s;
+  }
+  .btn:hover { background: var(--bg3); border-color: var(--accent); color: var(--accent2); }
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+  .btn-sm { padding: 5px 12px; font-size: 0.65rem; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Grid ── */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px;
+  }
+
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--card-r);
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .card:hover { border-color: var(--border2); transform: translateY(-2px); }
+  .card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+
+  .card-poster {
+    width: 100%;
+    aspect-ratio: 2/3;
+    object-fit: cover;
+    display: block;
+    background: var(--bg3);
+  }
+  .card-poster-placeholder {
+    width: 100%;
+    aspect-ratio: 2/3;
+    background: var(--bg3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+  }
+  .card-body {
+    padding: 10px;
+  }
+  .card-title {
+    font-size: 0.8rem;
+    font-weight: 500;
+    line-height: 1.3;
+    margin-bottom: 4px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card-meta {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: var(--muted);
+  }
+  .tag {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+  }
+  .tag-green { background: rgba(34,211,160,0.15); color: var(--green); }
+  .tag-amber { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .tag-muted { background: var(--bg3); color: var(--muted); }
+
+  .check-overlay {
+    position: absolute;
+    top: 8px; right: 8px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+  }
+  .card.selected .check-overlay { opacity: 1; }
+
+  /* ── Selection bar ── */
+  .selection-bar {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: transform 0.3s ease;
+    z-index: 200;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+    min-width: 400px;
+  }
+  .selection-bar.visible { transform: translateX(-50%) translateY(0); }
+  .sel-count { font-family: var(--font-mono); font-size: 0.75rem; }
+  .sel-count span { color: var(--accent2); font-weight: 700; }
+  .sel-actions { display: flex; gap: 8px; margin-left: auto; align-items: center; }
+
+  /* ── Jobs panel ── */
+  .panel {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--card-r);
+    margin-top: 2rem;
+  }
+  .panel-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .panel-title {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  .job-row {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    gap: 1rem;
+    align-items: center;
+    font-size: 0.85rem;
+  }
+  .job-row:last-child { border-bottom: none; }
+  .job-title { font-weight: 500; }
+  .job-path { font-family: var(--font-mono); font-size: 0.65rem; color: var(--muted); margin-top: 2px; }
+  .job-status { font-family: var(--font-mono); font-size: 0.65rem; }
+  .job-time { font-family: var(--font-mono); font-size: 0.65rem; color: var(--muted); }
+
+  /* ── Config modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 300;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .modal-overlay.open { opacity: 1; pointer-events: all; }
+  .modal {
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: 16px;
+    padding: 2rem;
+    width: 600px;
+    max-width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+    transform: translateY(20px);
+    transition: transform 0.2s;
+  }
+  .modal-overlay.open .modal { transform: translateY(0); }
+  .modal-title {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    margin-bottom: 1.5rem;
+    color: var(--accent2);
+  }
+  .field-group { margin-bottom: 1.25rem; }
+  .field-group label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .field-group input {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 9px 12px;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .field-group input:focus { border-color: var(--accent); }
+  .field-section-title {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--accent2);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin: 1.5rem 0 1rem;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 1.5rem; }
+
+  /* ── Log modal ── */
+  .log-box {
+    background: #070809;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: #7ee787;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 300px;
+    overflow-y: auto;
+    margin-top: 1rem;
+  }
+
+  /* ── States ── */
+  .empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--muted);
+  }
+  .empty-state .icon { font-size: 3rem; margin-bottom: 1rem; }
+  .empty-state p { font-size: 0.9rem; }
+
+  .loading-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px;
+  }
+  .skeleton {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--card-r);
+    overflow: hidden;
+  }
+  .skeleton-poster {
+    width: 100%; aspect-ratio: 2/3;
+    background: linear-gradient(90deg, var(--bg2) 25%, var(--bg3) 50%, var(--bg2) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+  .skeleton-body { padding: 10px; }
+  .skeleton-line {
+    height: 10px; border-radius: 4px; margin-bottom: 6px;
+    background: linear-gradient(90deg, var(--bg3) 25%, var(--bg) 50%, var(--bg3) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+  .skeleton-line.short { width: 60%; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+
+  .toast {
+    position: fixed; bottom: 6rem; right: 2rem;
+    background: var(--bg2); border: 1px solid var(--border2);
+    border-radius: 10px; padding: 12px 18px;
+    font-size: 0.82rem; z-index: 400;
+    transform: translateX(120%);
+    transition: transform 0.3s ease;
+    max-width: 320px;
+  }
+  .toast.show { transform: translateX(0); }
+  .toast.success { border-color: var(--green); color: var(--green); }
+  .toast.error   { border-color: var(--red);   color: var(--red); }
+
+  /* ── Pagination ── */
+  .pagination {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .pagination:last-child { margin-bottom: 0; margin-top: 1.5rem; }
+  .page-info {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--muted);
+    margin: 0 auto;
+  }
+  .page-info strong { color: var(--accent2); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    MEDIASYNC
+  </div>
+  <div class="status-bar">
+    <div class="status-badge" id="radarr-status">
+      <div class="dot red" id="radarr-dot"></div>
+      <span id="radarr-label">RADARR</span>
+    </div>
+    <div class="status-badge" id="sonarr-status">
+      <div class="dot red" id="sonarr-dot"></div>
+      <span id="sonarr-label">SONARR</span>
+    </div>
+    <button class="btn btn-sm" onclick="openConfig()">⚙ CONFIG</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="top-controls">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('movies', this)">◈ PEL·LÍCULES</button>
+      <button class="tab" onclick="switchTab('series', this)">◈ SÈRIES</button>
+      <button class="tab" onclick="switchTab('jobs', this)">◈ TRANSFERS</button>
+    </div>
+    <input type="text" class="search-input" id="search" placeholder="Cerca títol..." oninput="onSearch()">
+    <select class="filter-select" id="filter" onchange="renderGrid()">
+      <option value="all">Tots</option>
+      <option value="downloaded">Descarregats</option>
+      <option value="missing">Sense fitxer</option>
+    </select>
+    <button class="btn" onclick="loadContent()">↺ RECARREGAR</button>
+  </div>
+
+  <div id="content-area"></div>
+</div>
+
+<!-- Selection bar -->
+<div class="selection-bar" id="sel-bar">
+  <span class="sel-count">Seleccionat: <span id="sel-count">0</span></span>
+  <div class="sel-actions">
+    <button class="btn btn-sm" onclick="clearSelection()">Netejar</button>
+    <button class="btn btn-sm btn-primary" onclick="openDownloadConfirm()">↓ TRANSFERIR VIA RSYNC</button>
+  </div>
+</div>
+
+<!-- Config Modal -->
+<div class="modal-overlay" id="config-modal">
+  <div class="modal">
+    <div class="modal-title">// CONFIGURACIÓ</div>
+
+    <div class="field-section-title">Radarr</div>
+    <div class="field-group">
+      <label>URL</label>
+      <input type="text" id="cfg-radarr-url" placeholder="http://192.168.1.x:7878">
+    </div>
+    <div class="field-group">
+      <label>API Key</label>
+      <input type="text" id="cfg-radarr-key" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+    </div>
+
+    <div class="field-section-title">Sonarr</div>
+    <div class="field-group">
+      <label>URL</label>
+      <input type="text" id="cfg-sonarr-url" placeholder="http://192.168.1.x:8989">
+    </div>
+    <div class="field-group">
+      <label>API Key</label>
+      <input type="text" id="cfg-sonarr-key" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+    </div>
+
+    <div class="field-section-title">Servidor origen (rsync)</div>
+    <div class="field-group">
+      <label>Usuari SSH</label>
+      <input type="text" id="cfg-src-user" placeholder="user">
+    </div>
+    <div class="field-group">
+      <label>Host / IP</label>
+      <input type="text" id="cfg-src-host" placeholder="192.168.1.100">
+    </div>
+    <div class="field-group">
+      <label>Ruta base</label>
+      <input type="text" id="cfg-src-path" placeholder="/media">
+    </div>
+    <div class="field-group">
+      <label>Clau SSH (opcional)</label>
+      <input type="text" id="cfg-ssh-key" placeholder="/home/user/.ssh/id_rsa">
+    </div>
+
+    <div class="field-section-title">Destí</div>
+    <div class="field-group">
+      <label>Host destí (buit = local)</label>
+      <input type="text" id="cfg-dst-host" placeholder="(local o 192.168.1.200)">
+    </div>
+    <div class="field-group">
+      <label>Usuari destí</label>
+      <input type="text" id="cfg-dst-user" placeholder="user">
+    </div>
+    <div class="field-group">
+      <label>Ruta destí</label>
+      <input type="text" id="cfg-dst-path" placeholder="/downloads">
+    </div>
+    <div class="field-group">
+      <label>Opcions rsync extres</label>
+      <input type="text" id="cfg-rsync-extra" placeholder="-avz --progress">
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn" onclick="closeConfig()">Cancel·lar</button>
+      <button class="btn btn-primary" onclick="saveConfig()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Log Modal -->
+<div class="modal-overlay" id="log-modal">
+  <div class="modal">
+    <div class="modal-title" id="log-modal-title">// LOG RSYNC</div>
+    <div id="log-status-line" style="font-family:var(--font-mono);font-size:0.7rem;margin-bottom:0.5rem;"></div>
+    <div class="log-box" id="log-content">Carregant...</div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeLog()">Tancar</button>
+      <button class="btn btn-sm" onclick="refreshLog()">↺ Actualitzar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Download confirm Modal -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-title">// CONFIRMAR TRANSFERÈNCIA</div>
+    <div id="confirm-list" style="margin-bottom:1.5rem;font-size:0.85rem;line-height:2;"></div>
+    <div style="font-family:var(--font-mono);font-size:0.7rem;color:var(--muted);padding:10px 12px;background:var(--bg3);border-radius:8px;margin-bottom:1.5rem;" id="confirm-cmd"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeConfirm()">Cancel·lar</button>
+      <button class="btn btn-primary" onclick="confirmDownload()">Iniciar rsync</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = 'api.php';
+
+let currentTab = 'movies';
+let allItems = [];
+let currentPage = 1;
+let totalPages = 1;
+let totalItems = 0;
+let searchTimeout = null;
+let selected = new Set();
+let currentLogJobId = null;
+let logInterval = null;
+
+// ── Config ──────────────────────────────────────
+const defaultCfg = {
+  radarrUrl: 'http://localhost:7878',
+  radarrKey: '',
+  sonarrUrl: 'http://localhost:8989',
+  sonarrKey: '',
+  srcUser: 'user',
+  srcHost: '192.168.1.100',
+  srcPath: '/media',
+  sshKey: '',
+  dstHost: '',
+  dstUser: '',
+  dstPath: '/downloads',
+  rsyncExtra: '-avz --progress',
+};
+let cfg = Object.assign({}, defaultCfg, JSON.parse(localStorage.getItem('mediasync_cfg') || '{}'));
+
+function openConfig() {
+  document.getElementById('cfg-radarr-url').value   = cfg.radarrUrl;
+  document.getElementById('cfg-radarr-key').value   = cfg.radarrKey;
+  document.getElementById('cfg-sonarr-url').value   = cfg.sonarrUrl;
+  document.getElementById('cfg-sonarr-key').value   = cfg.sonarrKey;
+  document.getElementById('cfg-src-user').value     = cfg.srcUser;
+  document.getElementById('cfg-src-host').value     = cfg.srcHost;
+  document.getElementById('cfg-src-path').value     = cfg.srcPath;
+  document.getElementById('cfg-ssh-key').value      = cfg.sshKey;
+  document.getElementById('cfg-dst-host').value     = cfg.dstHost;
+  document.getElementById('cfg-dst-user').value     = cfg.dstUser;
+  document.getElementById('cfg-dst-path').value     = cfg.dstPath;
+  document.getElementById('cfg-rsync-extra').value  = cfg.rsyncExtra;
+  document.getElementById('config-modal').classList.add('open');
+}
+function closeConfig() {
+  document.getElementById('config-modal').classList.remove('open');
+}
+function saveConfig() {
+  cfg.radarrUrl   = document.getElementById('cfg-radarr-url').value.trim();
+  cfg.radarrKey   = document.getElementById('cfg-radarr-key').value.trim();
+  cfg.sonarrUrl   = document.getElementById('cfg-sonarr-url').value.trim();
+  cfg.sonarrKey   = document.getElementById('cfg-sonarr-key').value.trim();
+  cfg.srcUser     = document.getElementById('cfg-src-user').value.trim();
+  cfg.srcHost     = document.getElementById('cfg-src-host').value.trim();
+  cfg.srcPath     = document.getElementById('cfg-src-path').value.trim();
+  cfg.sshKey      = document.getElementById('cfg-ssh-key').value.trim();
+  cfg.dstHost     = document.getElementById('cfg-dst-host').value.trim();
+  cfg.dstUser     = document.getElementById('cfg-dst-user').value.trim();
+  cfg.dstPath     = document.getElementById('cfg-dst-path').value.trim();
+  cfg.rsyncExtra  = document.getElementById('cfg-rsync-extra').value.trim();
+  localStorage.setItem('mediasync_cfg', JSON.stringify(cfg));
+  closeConfig();
+  showToast('Configuració guardada', 'success');
+  loadContent();
+}
+
+// ── Tab switching ──────────────────────────────
+function switchTab(tab, btn) {
+  currentTab = tab;
+  currentPage = 1;
+  selected.clear();
+  updateSelBar();
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  if (tab === 'jobs') {
+    loadJobs();
+  } else {
+    loadContent();
+  }
+}
+
+// ── Load content ───────────────────────────────
+async function loadContent(page) {
+  if (currentTab === 'jobs') { loadJobs(); return; }
+  if (page) currentPage = page;
+  showSkeletons();
+  const action = currentTab === 'movies' ? 'movies' : 'series';
+  try {
+    const url = buildApiUrl(action);
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    // Paginated response
+    if (data.items !== undefined) {
+      allItems    = data.items;
+      totalPages  = data.pages;
+      totalItems  = data.total;
+      currentPage = data.page;
+    } else {
+      // Fallback: old flat array (Sonarr petita)
+      allItems   = data;
+      totalPages = 1;
+      totalItems = data.length;
+      currentPage = 1;
+    }
+    renderGrid();
+    checkStatus();
+  } catch(e) {
+    showError(e.message);
+  }
+}
+
+function buildApiUrl(action) {
+  const q = document.getElementById('search').value.trim();
+  const params = new URLSearchParams({
+    action,
+    page: currentPage,
+    radarr_url: cfg.radarrUrl,
+    radarr_key: cfg.radarrKey,
+    sonarr_url: cfg.sonarrUrl,
+    sonarr_key: cfg.sonarrKey,
+  });
+  if (q) params.set('search', q);
+  return `${API}?${params}`;
+}
+
+function onSearch() {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    currentPage = 1;
+    loadContent();
+  }, 400);
+}
+
+function renderGrid() {
+  const filter = document.getElementById('filter').value;
+
+  let items = allItems.filter(i => {
+    if (filter === 'downloaded') return i.hasFile;
+    if (filter === 'missing')    return !i.hasFile;
+    return true;
+  });
+
+  const paginationHTML = totalPages > 1 ? `
+    <div class="pagination">
+      <button class="btn btn-sm" onclick="loadContent(1)" ${currentPage===1?'disabled':''}>«</button>
+      <button class="btn btn-sm" onclick="loadContent(${currentPage-1})" ${currentPage===1?'disabled':''}>‹</button>
+      <span class="page-info">Pàgina <strong>${currentPage}</strong> de <strong>${totalPages}</strong> · ${totalItems} elements</span>
+      <button class="btn btn-sm" onclick="loadContent(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>›</button>
+      <button class="btn btn-sm" onclick="loadContent(${totalPages})" ${currentPage===totalPages?'disabled':''}>»</button>
+    </div>` : `<div class="pagination"><span class="page-info">${totalItems} elements</span></div>`;
+
+  if (items.length === 0) {
+    document.getElementById('content-area').innerHTML = `
+      ${paginationHTML}
+      <div class="empty-state">
+        <div class="icon">◈</div>
+        <p>No s'han trobat resultats</p>
+      </div>`;
+    return;
+  }
+
+  document.getElementById('content-area').innerHTML = `
+    ${paginationHTML}
+    <div class="grid">${items.map(cardHTML).join('')}</div>
+    ${paginationHTML}`;
+}
+
+function cardHTML(item) {
+  const sel   = selected.has(item.id) ? 'selected' : '';
+  const tag   = item.hasFile
+    ? `<span class="tag tag-green">OK</span>`
+    : `<span class="tag tag-amber">FALTA</span>`;
+  const poster = item.poster
+    ? `<img class="card-poster" src="${item.poster}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+    : '';
+  const placeholder = `<div class="card-poster-placeholder" ${item.poster ? 'style="display:none"' : ''}>🎬</div>`;
+
+  return `
+    <div class="card ${sel}" onclick="toggleSelect(${item.id})" data-id="${item.id}">
+      <div class="check-overlay">✓</div>
+      ${poster}
+      ${placeholder}
+      <div class="card-body">
+        <div class="card-title">${escHtml(item.title)}</div>
+        <div class="card-meta">
+          <span>${item.year || '—'}</span>
+          ${tag}
+        </div>
+      </div>
+    </div>`;
+}
+
+function toggleSelect(id) {
+  if (selected.has(id)) selected.delete(id);
+  else selected.add(id);
+
+  document.querySelectorAll(`.card[data-id="${id}"]`)
+    .forEach(c => c.classList.toggle('selected', selected.has(id)));
+
+  updateSelBar();
+}
+
+function clearSelection() {
+  selected.clear();
+  document.querySelectorAll('.card.selected').forEach(c => c.classList.remove('selected'));
+  updateSelBar();
+}
+
+function updateSelBar() {
+  const bar = document.getElementById('sel-bar');
+  document.getElementById('sel-count').textContent = selected.size;
+  bar.classList.toggle('visible', selected.size > 0);
+}
+
+// ── Download / Rsync ───────────────────────────
+function openDownloadConfirm() {
+  const items = allItems.filter(i => selected.has(i.id));
+  const list  = items.map(i =>
+    `<div>◈ ${escHtml(i.title)} <span class="tag tag-muted">${i.type === 'movie' ? 'pel·lícula' : 'sèrie'}</span></div>`
+  ).join('');
+
+  const src    = cfg.srcHost ? `${cfg.srcUser}@${cfg.srcHost}:${cfg.srcPath}` : cfg.srcPath;
+  const dst    = cfg.dstHost ? `${cfg.dstUser}@${cfg.dstHost}:${cfg.dstPath}` : cfg.dstPath;
+  const cmdEx  = `rsync ${cfg.rsyncExtra} "${src}/[path]" "${dst}/[type]/"`;
+
+  document.getElementById('confirm-list').innerHTML = list;
+  document.getElementById('confirm-cmd').textContent = cmdEx;
+  document.getElementById('confirm-modal').classList.add('open');
+}
+function closeConfirm() {
+  document.getElementById('confirm-modal').classList.remove('open');
+}
+
+async function confirmDownload() {
+  closeConfirm();
+  const items = allItems.filter(i => selected.has(i.id));
+  let ok = 0, fail = 0;
+
+  for (const item of items) {
+    try {
+      const res = await fetch(`${API}?action=download`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          path:  item.path,
+          title: item.title,
+          type:  item.type,
+          cfg:   cfg,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      ok++;
+    } catch(e) {
+      fail++;
+      console.error(item.title, e);
+    }
+  }
+
+  clearSelection();
+  if (ok > 0) showToast(`${ok} transferència(es) iniciada(es)`, 'success');
+  if (fail > 0) showToast(`${fail} error(s)`, 'error');
+
+  setTimeout(() => { switchTab('jobs', document.querySelectorAll('.tab')[2]); }, 1200);
+}
+
+// ── Jobs ──────────────────────────────────────
+async function loadJobs() {
+  document.getElementById('content-area').innerHTML = `<div class="empty-state"><p>Carregant...</p></div>`;
+  try {
+    const res  = await fetch(`${API}?action=jobs`);
+    const jobs = await res.json();
+    renderJobs(jobs);
+  } catch(e) { showError(e.message); }
+}
+
+function renderJobs(jobs) {
+  if (!jobs.length) {
+    document.getElementById('content-area').innerHTML = `
+      <div class="empty-state">
+        <div class="icon">◈</div>
+        <p>Cap transferència activa</p>
+      </div>`;
+    return;
+  }
+
+  const rows = jobs.sort((a,b) => b.started.localeCompare(a.started)).map(j => {
+    const statusTag = j.status === 'running'
+      ? `<span class="tag tag-amber" style="animation:pulse 1.5s infinite">EN CURS</span>`
+      : `<span class="tag tag-green">COMPLETAT</span>`;
+    return `
+      <div class="job-row">
+        <div>
+          <div class="job-title">${escHtml(j.title)}</div>
+          <div class="job-path">${escHtml(j.source || '')} → ${escHtml(j.dest || '')}</div>
+        </div>
+        <div class="job-status">${statusTag}</div>
+        <div class="job-time">${j.started}</div>
+        <button class="btn btn-sm" onclick="openLog('${j.id}')">LOG</button>
+      </div>`;
+  }).join('');
+
+  document.getElementById('content-area').innerHTML = `
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Transferències rsync</span>
+        <button class="btn btn-sm" onclick="loadJobs()">↺ Actualitzar</button>
+      </div>
+      ${rows}
+    </div>`;
+}
+
+async function openLog(jobId) {
+  currentLogJobId = jobId;
+  document.getElementById('log-modal').classList.add('open');
+  document.getElementById('log-content').textContent = 'Carregant...';
+  await refreshLog();
+  logInterval = setInterval(refreshLog, 3000);
+}
+function closeLog() {
+  document.getElementById('log-modal').classList.remove('open');
+  clearInterval(logInterval);
+  currentLogJobId = null;
+}
+async function refreshLog() {
+  if (!currentLogJobId) return;
+  try {
+    const res  = await fetch(`${API}?action=job_status&id=${currentLogJobId}`);
+    const data = await res.json();
+    document.getElementById('log-modal-title').textContent = `// LOG — ${data.title || currentLogJobId}`;
+    document.getElementById('log-status-line').innerHTML =
+      data.status === 'running'
+        ? `<span class="tag tag-amber">EN CURS</span> PID ${data.pid}`
+        : `<span class="tag tag-green">COMPLETAT</span> ${data.finished || ''}`;
+    const logEl = document.getElementById('log-content');
+    logEl.textContent = data.log || '(log buit)';
+    logEl.scrollTop = logEl.scrollHeight;
+    if (data.status === 'finished') clearInterval(logInterval);
+  } catch(e) {
+    document.getElementById('log-content').textContent = 'Error llegint log: ' + e.message;
+  }
+}
+
+// ── Status check ───────────────────────────────
+async function checkStatus() {
+  checkService('radarr', cfg.radarrUrl, cfg.radarrKey);
+  checkService('sonarr', cfg.sonarrUrl, cfg.sonarrKey);
+}
+async function checkService(name, url, key) {
+  const dot   = document.getElementById(`${name}-dot`);
+  dot.className = 'dot amber';
+  try {
+    const res = await fetch(`${API}?action=${name === 'radarr' ? 'movies' : 'series'}&${name}_url=${encodeURIComponent(url)}&${name}_key=${encodeURIComponent(key)}`);
+    const ok  = res.ok;
+    dot.className = ok ? 'dot green' : 'dot red';
+  } catch {
+    dot.className = 'dot red';
+  }
+}
+
+// ── Helpers ────────────────────────────────────
+function showSkeletons() {
+  const skels = Array.from({length: 18}, () => `
+    <div class="skeleton">
+      <div class="skeleton-poster"></div>
+      <div class="skeleton-body">
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line short"></div>
+      </div>
+    </div>`).join('');
+  document.getElementById('content-area').innerHTML = `<div class="loading-grid">${skels}</div>`;
+}
+function showError(msg) {
+  document.getElementById('content-area').innerHTML = `
+    <div class="empty-state">
+      <div class="icon">⚠</div>
+      <p>${escHtml(msg)}</p>
+      <p style="margin-top:8px;font-size:0.8rem;">Comprova la configuració (⚙ CONFIG)</p>
+    </div>`;
+}
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// ── Init ───────────────────────────────────────
+if (!cfg.radarrKey && !cfg.radarrUrl) {
+  setTimeout(openConfig, 400);
+} else {
+  loadContent();
+}
+</script>
+</body>
+</html>
