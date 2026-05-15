@@ -37,6 +37,8 @@ $config = [
         'destUser'       => frontOr($frontCfg, 'dstUser',    'DEST_USER',        ''),
         'destHost'       => frontOr($frontCfg, 'dstHost',    'DEST_HOST',        ''),
         'destBasePath'   => frontOr($frontCfg, 'dstPath',    'DEST_BASE_PATH',   '/downloads'),
+        'moviesSubDir'   => frontOr($frontCfg, 'moviesDir',  'MOVIES_SUBDIR',    'movies'),
+        'seriesSubDir'   => frontOr($frontCfg, 'seriesDir',  'SERIES_SUBDIR',    'series'),
         'sshKey'         => frontOr($frontCfg, 'sshKey',     'SSH_KEY',          '/var/www/.ssh/id_rsa'),
         'extraOptions'   => frontOr($frontCfg, 'rsyncExtra', 'RSYNC_EXTRA',      '-avz --progress'),
     ],
@@ -196,8 +198,11 @@ function startRsync(array $body, array $cfg): array {
         ? $itemPath
         : rtrim($rsync['sourceBasePath'],'/').'/'.$itemPath;
 
-    $subDir   = ($type === 'movie') ? 'movies' : 'series';
-    $destPath = rtrim($rsync['destBasePath'],'/')."/{$subDir}";
+    $subDir = ($type === 'movie')
+        ? trim($rsync['moviesSubDir'], '/')
+        : trim($rsync['seriesSubDir'], '/');
+    $destPath = rtrim($rsync['destBasePath'], '/');
+    if ($subDir !== '') $destPath .= '/'.$subDir;
 
     if ($srcRemote && empty($rsync['sourceUser'])) {
         return ['error' => "Origen remot però sense usuari SSH (SOURCE_USER buit). Revisa ⚙ CONFIG."];

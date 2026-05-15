@@ -553,6 +553,14 @@
       <input type="text" id="cfg-dst-path" placeholder="/downloads">
     </div>
     <div class="field-group">
+      <label>Subdir per pel·lícules</label>
+      <input type="text" id="cfg-movies-dir" placeholder="movies (o Pelis, Films...)">
+    </div>
+    <div class="field-group">
+      <label>Subdir per sèries</label>
+      <input type="text" id="cfg-series-dir" placeholder="series (o Series, TV...)">
+    </div>
+    <div class="field-group">
       <label>Opcions rsync extres</label>
       <input type="text" id="cfg-rsync-extra" placeholder="-avz --progress">
     </div>
@@ -618,6 +626,8 @@ const defaultCfg = {
   dstHost: '',
   dstUser: '',
   dstPath: '/downloads',
+  moviesDir: 'movies',
+  seriesDir: 'series',
   rsyncExtra: '-avz --progress',
 };
 let cfg = Object.assign({}, defaultCfg, JSON.parse(localStorage.getItem('mediasync_cfg') || '{}'));
@@ -634,6 +644,8 @@ function openConfig() {
   document.getElementById('cfg-dst-host').value     = cfg.dstHost;
   document.getElementById('cfg-dst-user').value     = cfg.dstUser;
   document.getElementById('cfg-dst-path').value     = cfg.dstPath;
+  document.getElementById('cfg-movies-dir').value   = cfg.moviesDir;
+  document.getElementById('cfg-series-dir').value   = cfg.seriesDir;
   document.getElementById('cfg-rsync-extra').value  = cfg.rsyncExtra;
   document.getElementById('config-modal').classList.add('open');
 }
@@ -652,6 +664,8 @@ function saveConfig() {
   cfg.dstHost     = document.getElementById('cfg-dst-host').value.trim();
   cfg.dstUser     = document.getElementById('cfg-dst-user').value.trim();
   cfg.dstPath     = document.getElementById('cfg-dst-path').value.trim();
+  cfg.moviesDir   = document.getElementById('cfg-movies-dir').value.trim() || 'movies';
+  cfg.seriesDir   = document.getElementById('cfg-series-dir').value.trim() || 'series';
   cfg.rsyncExtra  = document.getElementById('cfg-rsync-extra').value.trim();
   localStorage.setItem('mediasync_cfg', JSON.stringify(cfg));
   closeConfig();
