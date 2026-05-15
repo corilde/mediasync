@@ -224,6 +224,7 @@
   }
   .tag-green { background: rgba(34,211,160,0.15); color: var(--green); }
   .tag-amber { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .tag-red   { background: rgba(248,113,113,0.15); color: var(--red); }
   .tag-muted { background: var(--bg3); color: var(--muted); }
 
   .check-overlay {
@@ -830,6 +831,7 @@ async function confirmDownload() {
   closeConfirm();
   const items = allItems.filter(i => selected.has(i.id));
   let ok = 0, fail = 0;
+  let firstError = null;
 
   for (const item of items) {
     try {
@@ -848,13 +850,14 @@ async function confirmDownload() {
       ok++;
     } catch(e) {
       fail++;
+      if (!firstError) firstError = e.message;
       console.error(item.title, e);
     }
   }
 
   clearSelection();
   if (ok > 0) showToast(`${ok} transferència(es) iniciada(es)`, 'success');
-  if (fail > 0) showToast(`${fail} error(s)`, 'error');
+  if (fail > 0) showToast(`${fail} error(s): ${firstError || ''}`, 'error');
 
   setTimeout(() => { switchTab('jobs', document.querySelectorAll('.tab')[2]); }, 1200);
 }
@@ -880,9 +883,7 @@ function renderJobs(jobs) {
   }
 
   const rows = jobs.sort((a,b) => b.started.localeCompare(a.started)).map(j => {
-    const statusTag = j.status === 'running'
-      ? `<span class="tag tag-amber" style="animation:pulse 1.5s infinite">EN CURS</span>`
-      : `<span class="tag tag-green">COMPLETAT</span>`;
+    const statusTag = statusTagHTML(j);
     return `
       <div class="job-row">
         <div>
@@ -905,6 +906,23 @@ function renderJobs(jobs) {
     </div>`;
 }
 
+function statusTagHTML(j) {
+  switch (j.status) {
+    case 'running':
+      return `<span class="tag tag-amber" style="animation:pulse 1.5s infinite">EN CURS</span>`;
+    case 'success':
+      return `<span class="tag tag-green">COMPLETAT</span>`;
+    case 'failed':
+      const code = (j.exitCode === null || j.exitCode === undefined) ? '?' : j.exitCode;
+      return `<span class="tag tag-red">FALLAT (codi ${code})</span>`;
+    // Compatibilitat amb jobs antics que tenien status='finished'
+    case 'finished':
+      return `<span class="tag tag-muted">ACABAT</span>`;
+    default:
+      return `<span class="tag tag-muted">${escHtml(j.status || '?')}</span>`;
+  }
+}
+
 async function openLog(jobId) {
   currentLogJobId = jobId;
   document.getElementById('log-modal').classList.add('open');
@@ -923,14 +941,21 @@ async function refreshLog() {
     const res  = await fetch(`${API}?action=job_status&id=${currentLogJobId}`);
     const data = await res.json();
     document.getElementById('log-modal-title').textContent = `// LOG — ${data.title || currentLogJobId}`;
-    document.getElementById('log-status-line').innerHTML =
-      data.status === 'running'
-        ? `<span class="tag tag-amber">EN CURS</span> PID ${data.pid}`
-        : `<span class="tag tag-green">COMPLETAT</span> ${data.finished || ''}`;
+
+    const tag = statusTagHTML(data);
+    const meta = data.status === 'running'
+      ? ` PID ${data.pid}`
+      : ` ${data.finished || ''}`;
+    document.getElementById('log-status-line').innerHTML = tag + meta;
+
     const logEl = document.getElementById('log-content');
     logEl.textContent = data.log || '(log buit)';
+    // Quan ha fallat, deixem el log en vermell perquè ressalti.
+    logEl.style.color = (data.status === 'failed') ? 'var(--red)' : '#7ee787';
     logEl.scrollTop = logEl.scrollHeight;
-    if (data.status === 'finished') clearInterval(logInterval);
+
+    // Parem de fer polling quan ja no està en marxa.
+    if (data.status !== 'running') clearInterval(logInterval);
   } catch(e) {
     document.getElementById('log-content').textContent = 'Error llegint log: ' + e.message;
   }

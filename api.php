@@ -186,66 +186,160 @@ function startRsync(array $body, array $cfg): array {
 
     $rsync = $cfg['rsync'];
 
-    if (!empty($rsync['sourceHost'])) {
-        $srcFull = "{$rsync['sourceUser']}@{$rsync['sourceHost']}:".rtrim($rsync['sourceBasePath'],'/').'/'.ltrim($itemPath,'/');
-    } else {
-        $srcFull = rtrim($rsync['sourceBasePath'],'/').'/'.ltrim($itemPath,'/');
-    }
+    $srcRemote = !empty($rsync['sourceHost']);
+    $dstRemote = !empty($rsync['destHost']);
+
+    // ── Validació prèvia ────────────────────────────────────────────
+    // Si el path de Radarr/Sonarr ja és absolut, el fem servir tal qual.
+    // Si és relatiu, hi posem davant sourceBasePath.
+    $srcPath = (str_starts_with($itemPath, '/'))
+        ? $itemPath
+        : rtrim($rsync['sourceBasePath'],'/').'/'.$itemPath;
 
     $subDir   = ($type === 'movie') ? 'movies' : 'series';
     $destPath = rtrim($rsync['destBasePath'],'/')."/{$subDir}";
 
-    if (!empty($rsync['destHost'])) {
-        $dstFull = "{$rsync['destUser']}@{$rsync['destHost']}:{$destPath}";
-    } else {
-        if (!is_dir($destPath)) @mkdir($destPath, 0755, true);
-        $dstFull = $destPath;
+    if ($srcRemote && empty($rsync['sourceUser'])) {
+        return ['error' => "Origen remot però sense usuari SSH (SOURCE_USER buit). Revisa ⚙ CONFIG."];
+    }
+    if ($dstRemote && empty($rsync['destUser'])) {
+        return ['error' => "Destí remot però sense usuari SSH (DEST_USER buit). Revisa ⚙ CONFIG."];
+    }
+    if (!$srcRemote && !file_exists($srcPath)) {
+        return ['error' => "Ruta origen local no existeix: {$srcPath}. ¿Has muntat el volum correctament? ¿Has deixat SOURCE_HOST buit per error?"];
+    }
+    if (!$dstRemote && !is_dir($destPath)) {
+        if (!@mkdir($destPath, 0755, true)) {
+            return ['error' => "No s'ha pogut crear el directori destí local: {$destPath}"];
+        }
     }
 
+    // ── Opcions SSH ─────────────────────────────────────────────────
     $sshKeyOpt = '';
     if (!empty($rsync['sshKey']) && file_exists($rsync['sshKey'])) {
         $sshKeyOpt = ' -i '.escapeshellarg($rsync['sshKey']);
     }
-    $sshE = '-e '.escapeshellarg('ssh'.$sshKeyOpt.' -o StrictHostKeyChecking=no -o BatchMode=yes');
+    $sshArgs = 'ssh'.$sshKeyOpt.' -o StrictHostKeyChecking=no -o BatchMode=yes';
+    $sshE    = '-e '.escapeshellarg($sshArgs);
 
-    $jobId   = uniqid('job_', true);
-    $logFile = LOGS_DIR."/rsync_{$jobId}.log";
+    // ── Construcció de la comanda segons topologia ──────────────────
+    $jobId    = uniqid('job_', true);
+    $logFile  = LOGS_DIR."/rsync_{$jobId}.log";
+    $exitFile = $logFile.'.exit';
 
-    $cmd = sprintf('rsync %s %s %s %s > %s 2>&1 & echo $!',
-        $rsync['extraOptions'],
-        $sshE,
-        escapeshellarg($srcFull),
-        escapeshellarg($dstFull),
-        escapeshellarg($logFile)
+    if ($srcRemote && $dstRemote) {
+        // Remot ↔ Remot: rsync no ho permet en una sola comanda.
+        // Solució: SSH a l'origen i executar rsync des d'allà cap al destí.
+        // (Requereix que l'origen pugui SSH-ar al destí amb una clau autoritzada.)
+        $srcFull = $srcPath;
+        $dstFull = "{$rsync['destUser']}@{$rsync['destHost']}:{$destPath}";
+        $remoteCmd = sprintf('rsync %s %s %s %s',
+            $rsync['extraOptions'],
+            $sshE,
+            escapeshellarg($srcFull),
+            escapeshellarg($dstFull)
+        );
+        $rsyncCmd = sprintf('ssh%s -o StrictHostKeyChecking=no -o BatchMode=yes %s %s',
+            $sshKeyOpt,
+            escapeshellarg("{$rsync['sourceUser']}@{$rsync['sourceHost']}"),
+            escapeshellarg($remoteCmd)
+        );
+        $srcDisplay = "{$rsync['sourceUser']}@{$rsync['sourceHost']}:{$srcFull}";
+        $dstDisplay = $dstFull;
+    } else {
+        if ($srcRemote) {
+            $srcFull = "{$rsync['sourceUser']}@{$rsync['sourceHost']}:{$srcPath}";
+        } else {
+            $srcFull = $srcPath;
+        }
+        if ($dstRemote) {
+            $dstFull = "{$rsync['destUser']}@{$rsync['destHost']}:{$destPath}";
+        } else {
+            $dstFull = $destPath;
+        }
+        $rsyncCmd = sprintf('rsync %s %s %s %s',
+            $rsync['extraOptions'],
+            ($srcRemote || $dstRemote) ? $sshE : '',
+            escapeshellarg($srcFull),
+            escapeshellarg($dstFull)
+        );
+        $srcDisplay = $srcFull;
+        $dstDisplay = $dstFull;
+    }
+
+    // ── Llançament en background capturant exit code ───────────────
+    // Wrapper: ( cmd > log 2>&1 ; echo $? > exitfile ) & echo $!
+    $wrapper = sprintf('( %s > %s 2>&1 ; echo $? > %s ) & echo $!',
+        $rsyncCmd,
+        escapeshellarg($logFile),
+        escapeshellarg($exitFile)
     );
 
+    // Cal forçar bash perquè /bin/sh en alguns sistemes no gestiona
+    // bé el subshell + & + echo $! retornant el PID correcte.
+    $cmd = '/bin/bash -c '.escapeshellarg($wrapper);
+
     $pid = trim(shell_exec($cmd) ?? '');
-    if (!is_numeric($pid)) return ['error' => 'No s\'ha pogut iniciar rsync'];
+    if (!is_numeric($pid)) {
+        return ['error' => 'No s\'ha pogut iniciar rsync (PID invàlid)'];
+    }
 
     $job = [
         'id'       => $jobId, 'pid' => $pid,
         'title'    => $title, 'type' => $type,
-        'source'   => $srcFull, 'dest' => $dstFull,
+        'source'   => $srcDisplay, 'dest' => $dstDisplay,
         'status'   => 'running',
         'started'  => date('Y-m-d H:i:s'), 'finished' => null,
         'logFile'  => $logFile,
+        'exitFile' => $exitFile,
+        'exitCode' => null,
     ];
     saveJob($job);
     return ['success' => true, 'jobId' => $jobId, 'pid' => $pid];
+}
+
+/**
+ * Comprova si una feina ha acabat i, si és així, llegeix el seu exit code
+ * per decidir si ha estat 'success' (0) o 'failed' (≠0).
+ * Retorna la $job modificada (no la desa).
+ */
+function refreshJobStatus(array $job): array {
+    if ($job['status'] !== 'running') return $job;
+    if (empty($job['pid'])) return $job;
+
+    $check = trim(shell_exec("ps -p ".escapeshellarg($job['pid'])." -o pid= 2>/dev/null") ?? '');
+    if (!empty($check)) return $job; // encara corre
+
+    // Procés acabat — intentar llegir l'exit code
+    $code = null;
+    if (!empty($job['exitFile']) && file_exists($job['exitFile'])) {
+        $raw = trim(file_get_contents($job['exitFile']));
+        if ($raw !== '' && is_numeric($raw)) $code = (int)$raw;
+    }
+
+    $job['exitCode'] = $code;
+    $job['finished'] = date('Y-m-d H:i:s');
+    if ($code === 0) {
+        $job['status'] = 'success';
+    } else if ($code === null) {
+        // PID s'ha mort però no s'ha escrit exit code: probablement matat.
+        $job['status'] = 'failed';
+    } else {
+        $job['status'] = 'failed';
+    }
+    return $job;
 }
 
 function getJobStatus(string $jobId): array {
     if (empty($jobId)) return ['error' => 'ID buit'];
     $jobs = loadJobs();
     if (!isset($jobs[$jobId])) return ['error' => 'Job no trobat'];
-    $job = $jobs[$jobId];
-    if ($job['status'] === 'running' && !empty($job['pid'])) {
-        $check = trim(shell_exec("ps -p {$job['pid']} -o pid= 2>/dev/null") ?? '');
-        if (empty($check)) {
-            $job['status'] = 'finished'; $job['finished'] = date('Y-m-d H:i:s');
-            updateJob($job);
-        }
-    }
+
+    $job    = $jobs[$jobId];
+    $before = $job['status'];
+    $job    = refreshJobStatus($job);
+    if ($job['status'] !== $before) updateJob($job);
+
     $log = '';
     if (!empty($job['logFile']) && file_exists($job['logFile'])) {
         $lines = file($job['logFile']) ?: [];
@@ -255,14 +349,16 @@ function getJobStatus(string $jobId): array {
 }
 
 function getJobs(): array {
-    $jobs = loadJobs();
-    foreach ($jobs as &$job) {
-        if ($job['status'] === 'running' && !empty($job['pid'])) {
-            $check = trim(shell_exec("ps -p {$job['pid']} -o pid= 2>/dev/null") ?? '');
-            if (empty($check)) { $job['status'] = 'finished'; $job['finished'] = date('Y-m-d H:i:s'); }
+    $jobs    = loadJobs();
+    $changed = false;
+    foreach ($jobs as $id => $job) {
+        $updated = refreshJobStatus($job);
+        if ($updated['status'] !== $job['status']) {
+            $jobs[$id] = $updated;
+            $changed   = true;
         }
     }
-    saveAllJobs($jobs);
+    if ($changed) saveAllJobs($jobs);
     return array_values($jobs);
 }
 
