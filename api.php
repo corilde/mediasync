@@ -17,7 +17,10 @@ $body     = $bodyRaw ? (json_decode($bodyRaw, true) ?? []) : [];
 $frontCfg = $body['cfg'] ?? [];
 
 function frontOr(array $fc, string $key, string $envKey, string $default): string {
-    if (!empty($fc[$key])) return $fc[$key];
+    // Si el front-end envia el camp explícitament (encara que sigui ''),
+    // l'utilitzem tal qual. Així, buidar un camp a la UI realment el buida,
+    // sense caure cap a la variable d'entorn corresponent.
+    if (array_key_exists($key, $fc)) return (string)$fc[$key];
     return envOr($envKey, $default);
 }
 
@@ -57,6 +60,21 @@ switch ($action) {
     case 'jobs':       echo json_encode(getJobs());                     break;
     case 'job_status': echo json_encode(getJobStatus($_GET['id']??'')); break;
     case 'health':     echo json_encode(['status'=>'ok','time'=>date('c')]); break;
+    case 'config_debug':
+        // Diagnòstic: mostra exactament quina config rsync s'està aplicant
+        // (combinació de front-end + env + defaults) sense exposar la API key.
+        $rs = $config['rsync'];
+        echo json_encode([
+            'rsync'    => $rs,
+            'fromUI'   => array_keys($frontCfg),
+            'envVars'  => [
+                'SOURCE_HOST' => getenv('SOURCE_HOST'),
+                'SOURCE_USER' => getenv('SOURCE_USER'),
+                'DEST_HOST'   => getenv('DEST_HOST'),
+                'DEST_USER'   => getenv('DEST_USER'),
+            ],
+        ], JSON_PRETTY_PRINT);
+        break;
     default:
         http_response_code(404);
         echo json_encode(['error' => 'Accio no trobada']);

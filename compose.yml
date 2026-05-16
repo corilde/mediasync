@@ -12,6 +12,8 @@ services:
       - .env
     volumes:
       - /root/.ssh/id_rsa:/ssh/id_rsa:ro
+      - ./api.php:/var/www/html/api.php:ro
+      - ./index.html:/var/www/html/index.html:ro
       - mediasync_logs:/var/www/html/logs
       - mediasync_data:/var/www/html/data
     entrypoint:
@@ -22,11 +24,14 @@ services:
         echo "==> Instal·lant dependències..."
         apt-get update -qq && apt-get install -y -qq rsync openssh-client curl 2>/dev/null
 
-        echo "==> Descarregant fitxers de l'app..."
-        curl -fsSL "https://raw.githubusercontent.com/YOUR_USER/mediasync/main/api.php" -o /var/www/html/api.php
-        curl -fsSL "https://raw.githubusercontent.com/YOUR_USER/mediasync/main/index.html" -o /var/www/html/index.html
-        echo "    api.php: $(wc -c < /var/www/html/api.php) bytes"
-        echo "    index.html: $(wc -c < /var/www/html/index.html) bytes"
+        echo "==> Comprovant fitxers de l'app (muntats del host)..."
+        for f in api.php index.html; do
+          if [ ! -f "/var/www/html/$f" ]; then
+            echo "ERROR: /var/www/html/$f no existeix. Comprova el volum a compose.yml."
+            exit 1
+          fi
+          echo "    $f: $(wc -c < /var/www/html/$f) bytes"
+        done
 
         echo "==> Configurant SSH..."
         mkdir -p /var/www/.ssh && chmod 700 /var/www/.ssh
