@@ -14,6 +14,11 @@ services:
       - /root/.ssh/id_rsa:/ssh/id_rsa:ro
       - ./api.php:/var/www/html/api.php:ro
       - ./index.html:/var/www/html/index.html:ro
+      # Muntar la carpeta on Radarr/Sonarr guarden els fitxers, al MATEIX
+      # path que reporten a la seva API. Ajusta /mnt/Media si tu uses
+      # un altre path al host (per ex. /data/media). El path dins del
+      # contenidor ha de coincidir amb el que veu Radarr.
+      - /mnt/Media:/mnt/Media:ro
       - mediasync_logs:/var/www/html/logs
       - mediasync_data:/var/www/html/data
     entrypoint:
